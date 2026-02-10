@@ -373,6 +373,9 @@ def get_parser_config(chunk_method, parser_config):
             "auto_keywords": 0,
             "auto_questions": 0,
             "html4excel": False,
+            "excel_auto_mode": True,
+            "excel_form_mode": "auto",
+            "excel_fallback_to_table": True,
             "topn_tags": 3,
             "raptor": {
                 "use_raptor": True,

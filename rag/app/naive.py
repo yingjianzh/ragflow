@@ -40,6 +40,8 @@ from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.float_utils import normalize_overlapped_percent
 from common.parser_config_utils import normalize_layout_recognizer
+from deepdoc.parser.excel_profile import profile_excel_structure
+from rag.app.excel_kv_normalizer import normalize_excel_form_rows
 from rag.nlp import (
     concat_img,
     find_codec,
@@ -884,11 +886,34 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         else:
             # Default DeepDOC parser
             excel_parser = ExcelParser()
-            if parser_config.get("html4excel"):
-                sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
-                parser_config["chunk_token_num"] = 0
+            excel_auto_mode = bool(parser_config.get("excel_auto_mode", True))
+            excel_form_mode = str(parser_config.get("excel_form_mode", "auto")).strip().lower()
+            excel_fallback_to_table = bool(parser_config.get("excel_fallback_to_table", True))
+            use_kv_row = excel_form_mode == "kv_row"
+
+            if excel_form_mode != "disabled":
+                if excel_auto_mode and not use_kv_row:
+                    profile = profile_excel_structure(binary)
+                    use_kv_row = profile.get("kind") == "FORM_LIKE"
+                    logging.info("Excel auto profile for %s: kind=%s", filename, profile.get("kind"))
+                elif use_kv_row:
+                    logging.info("Excel form mode forced for %s", filename)
+
+            if use_kv_row:
+                sections = normalize_excel_form_rows(binary)
+                # Keep a conservative fallback to existing parser behavior.
+                if not sections and excel_fallback_to_table:
+                    if parser_config.get("html4excel"):
+                        sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
+                        parser_config["chunk_token_num"] = 0
+                    else:
+                        sections = [(_, "") for _ in excel_parser(binary) if _]
             else:
-                sections = [(_, "") for _ in excel_parser(binary) if _]
+                if parser_config.get("html4excel"):
+                    sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
+                    parser_config["chunk_token_num"] = 0
+                else:
+                    sections = [(_, "") for _ in excel_parser(binary) if _]
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
